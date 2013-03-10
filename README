@@ -1,0 +1,24 @@
+Implements an interface to access Google Authenticator functionality
+
+Supports both counter-based (HOTP) and time-based (TOTP) authentication mechanisms
+
+Is loosely based on other publicly available implementations:
+    1)  https://github.com/PHPGangsta/GoogleAuthenticator by Michael Kliewe
+    2)  http://dendory.net/twofactors by Patrick Lambert
+
+This class uses base32 encoding and decoding by Bryan Ruiz
+
+Usage:
+
+    1)  When user is registered or enrolled into 2 factor authentication, generate a unique key for them with getNewKey()
+        That key should be stored as it will be used every time user attempts to authenticate
+
+    2)  Call getQrCodeUrl() to show them a QR code to set up their authenticator app
+        If the QR code cannot be used or is not desired, ask user to enter the generated key into their app manually
+        It is possible to set up two kind of accounts in the app - counter- and time-based
+
+    3)  Once user's app is initialised, ask for that value when user needs to be authenticated and call
+        verifyCode() supplying the value provided.
+        The client must be set into a proper mode - counter or time-based (depending on what QR code user has been given)
+
+Could be freely used and distributed as long as attributed to Yuriy Akopov (akopov@hotmail.co.uk)

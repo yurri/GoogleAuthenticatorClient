@@ -1,0 +1,15 @@
+<!--
+    Defines tests for GoogleAuthenticatorClient
+
+    Author: Yuriy Akopov
+    Date:   2012-12-24
+
+-->
+<phpunit bootstrap="bootstrap.php">
+    <testsuites>
+        <testsuite name="GoogleAuthenticatorClient tests">
+            <file>classes/NewUserTest.php</file>
+            <file>classes/AuthTest.php</file>
+        </testsuite>
+    </testsuites>
+</phpunit>
