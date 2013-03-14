@@ -22,9 +22,9 @@ class AuthException extends \GoogleAuthenticator\Exception {}
 /**
  * Implements an interface to access Google Authenticator functionality
  *
- * Supports both counter-based and time-based authentication mechanisms
+ * Supports both counter-based (HOTP) and time-based (TOTP) authentication mechanisms
  *
- * Loosely based on other publicly available implementations:
+ * Based initially on other publicly available implementations:
  * 1) https://github.com/PHPGangsta/GoogleAuthenticator by Michael Kliewe
  * 2) http://dendory.net/twofactors by Patrick Lambert
  *
@@ -50,6 +50,9 @@ class AuthException extends \GoogleAuthenticator\Exception {}
 class Client {
     // length of the code displayed by Google Authenticator app to user
     const CODE_LENGTH = 6;
+
+    // length of the key used to set up user's Google Authenticator app
+    const KEY_LENGTH = 16;
 
     // Tolerance to time delays for supplied counter values (in seconds)
     // @todo: need to check if can be other than 30 sec
@@ -109,10 +112,10 @@ class Client {
     /**
      * Generates a new key basing on the allowed base32 alphabet
      *
-     * @param   int   $length
+     * @param   int   $length   not sure non-default length will work, use on your own risk
      * @return  string
      */
-    public static function getNewKey($length = 16) {
+    public static function getNewKey($length = self::KEY_LENGTH) {
         $abc = \GoogleAuthenticator\Base32::getAlphabet();
 
         $key = '';
@@ -127,11 +130,15 @@ class Client {
      * Checks if the code is correct
      * This will accept codes starting from $discrepancy*30sec ago to $discrepancy*30sec from now
      *
+     * Slightly disturbing that the $seed and $tolerance parameters may have different meaning
+     * depending on mode the client is on (supplied to constructor), but for some reason I thought
+     * that is better than having two methods one of which would be incorrect every given time
+     *
      * Returns matched attempt number within the allowed tolerance
      *
      * @param   string  $code       code user has provided from their app
      * @param   int     $seed       code generation seed (stored counter value for HOTP, timestamp for TOTP)
-     * @param   int     $tolerance  allowed mismatch (ticks for HOTP, 30 sec units for TOTP)
+     * @param   int     $tolerance  tolerated mismatch (ticks for HOTP, 30 sec units for TOTP)
      *
      * @return  int
      *
@@ -158,9 +165,13 @@ class Client {
 
             case self::MODE_HOTP:
                 $currentSeed = is_null($seed) ? 0 : $seed;
-                // allowing some tolerance if the user has clicked "login" button several times or updated
-                // counter in their map several times
-                $startFrom  = max(0, ($currentSeed - $tolerance));
+                // allowing some space for code mismatch if the user has clicked "login" button
+                // several times or updated counter in their map several times
+                // @todo: probably not safe, using 0 tolerance is recommended with HOTP
+
+                // for HOTP we only assume user counter could run ahead of the server one, not vice versa
+                // $startFrom  = max(0, ($currentSeed - $tolerance));
+                $startFrom  = $currentSeed;
                 $startTo    = $currentSeed + $tolerance;
             break;
 
@@ -194,34 +205,42 @@ class Client {
 
 
     /**
-     * Calculates a time-based code the user we specified on object creation is expected to see in their app
+     * Calculates a time-based (TOTP) code the user is expected to see in their app
      *
-     * @param   int $timeSlice
+     * Official algorithm description: http://tools.ietf.org/html/rfc6238
+     *
+     * @param   int $timeSlice number of 30 sec 'ticks' (unix timestamp / 30)
      *
      * @return  string
      */
     protected function _getExpectedTotpCode($timeSlice)
     {
-        // Pack time into binary string
-        $time = join('', array(chr(0), chr(0), chr(0), chr(0), pack('N*', $timeSlice)));
+        // pack time into 8 bytes binary string
+        $time = join('', array(
+                chr(0), chr(0), chr(0), chr(0), // 4 empty bytes as time is unsigned long
+                pack('N*', $timeSlice)          // unsigned long (always 4 bytes)
+        ));
 
-        // Hash it with users secret key
+        // hash it with users secret key into a 20 bytes string
         $secret = \GoogleAuthenticator\Base32::decode($this->_key);
         $hm = hash_hmac('SHA1', $time, $secret, true);
 
-        // Use last nipple of result as index/offset
+        // use last nipple (first 4 bits of the last byte, 0-15) of the result as index/offset for itself
         $offset = ord(substr($hm, -1)) & 0x0F;
 
-        // grab 4 bytes of the result
+        // grab 4 bytes of the result from that pseudo-random offset
         $hashpart = substr($hm, $offset, 4);
 
-        // Unpak binary value
+        // unpack from binary representation
         $value = unpack('N', $hashpart);
         $value = $value[1];
 
-        // Only 32 bits
         $value = $value & 0x7FFFFFFF;
 
+        // the result is now an unsigned 0-based 31-bit number with a maximum value of (2^31 - 1)
+        // i.e. Integer.MAX_VALUE i.e. 2,147,483,647
+
+        // now taking last 6 decimal digits as a one-time code we need
         $modulo = pow(10, self::CODE_LENGTH);
         $code = str_pad($value % $modulo, self::CODE_LENGTH, '0', STR_PAD_LEFT);
 
@@ -229,15 +248,18 @@ class Client {
     }
 
     /**
-     * Calculates a counter-based code the user we specified on object creation is expected to see in their app
+     * Calculates a counter-based (HOTP) code the user is expected to see in their app
+     * @todo: should be rewritten to use Base32 class as TOTP implementation, but I'm afraid of touching this code
+     * @todo: as I don't understand that arithmetical magic fully yet
      *
-     * @param   int $counter seed to build counter value from
+     * Official algorithm description: http://tools.ietf.org/html/rfc4226
+     *
+     * @param   int $counter counter value to calculate code from
      *
      * @return  string
      */
     protected function _getExpectedHotpCode($counter)
     {
-        $key = pack("H*", $this->_getHexKey($this->_key));
         $length = 8;
 
         // initialising the counter value from the seed given
@@ -255,7 +277,8 @@ class Client {
         }
 
         // encrypting the counter value in a hash using the secret key
-        $hash = hash_hmac ('SHA1', $binCounter, $key);
+        $key = pack("H*", $this->_getHexKey($this->_key));
+        $hash = hash_hmac('SHA1', $binCounter, $key);
 
         // truncating into code expected from user
         foreach(str_split($hash, 2) as $hex) {
@@ -263,6 +286,7 @@ class Client {
         }
         $offset = $hmac_result[19] & 0xf;
 
+        // taking 6 digits to use as a code
         $code =(
             (($hmac_result[$offset+0] & 0x7f) << 24 ) |
             (($hmac_result[$offset+1] & 0xff) << 16 ) |
@@ -274,7 +298,7 @@ class Client {
     }
 
     /**
-     * Returns URL to QRCode for Google Authenticator authorisation with camera
+     * Returns URL to QRCode picture for easy Google Authenticator initialisation with camera
      * Typical usage - show that to user in an iframe
      *
      * @param   string  $username   name to appear in app config created from QR code generated
@@ -309,9 +333,10 @@ class Client {
     }
 
     /**
-     * Returns URI to authenticator code generator
-     * Is not supposed to be used directly but supplied as a parameter to Google
-     * Basically this URL is a structure to hold more parameters as one
+     * Returns URI describing Google Authenticator setup
+     * Is not supposed to be used directly but supplied as a parameter to Google Charts to generate a picture
+     * Basically this URL is a structure to hold three parameters (username, shared secret key and selected method)
+     * as one
      *
      * Format description: http://code.google.com/p/google-authenticator/wiki/KeyUriFormat
      *

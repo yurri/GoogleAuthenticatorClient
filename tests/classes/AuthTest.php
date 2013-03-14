@@ -9,11 +9,11 @@ class AuthTest extends GoogleAuthenticatorClientTest {
     const
         PRESET_KEY          = 'ABCDEFGHIJKLMNOP',
         PRESET_TIMESTAMP    = 1362947590,
-        PRESET_COUNTER      = 4
+        PRESET_COUNTER      = 7
     ;
 
     /**
-     * Attempts to authenticate by time with an incorrect code
+     * Attempts to authenticate by time (TOTP) with an incorrect code
      *
      * @expectedException \GoogleAuthenticator\AuthException
      */
@@ -23,7 +23,7 @@ class AuthTest extends GoogleAuthenticatorClientTest {
     }
 
     /**
-     * Attempts to authenticate by time with a correct code
+     * Attempts to authenticate by time (TOTP) with a correct code
      */
     public function testTotpAuthSuccess() {
         $client = $this->getClient(self::PRESET_KEY, \GoogleAuthenticator\Client::MODE_TOTP);
@@ -33,7 +33,7 @@ class AuthTest extends GoogleAuthenticatorClientTest {
     }
 
     /**
-     * Attempts to authenticate by counter with an incorrect code
+     * Attempts to authenticate by counter (HOTP) with an incorrect code
      *
      * @expectedException \GoogleAuthenticator\AuthException
      */
@@ -43,11 +43,11 @@ class AuthTest extends GoogleAuthenticatorClientTest {
     }
 
     /**
-     * Attempts to authenticate by counter with a correct code
+     * Attempts to authenticate by counter (HOTP) with a correct code
      */
     public function testHotpAuthSuccess() {
         $client = $this->getClient(self::PRESET_KEY, \GoogleAuthenticator\Client::MODE_HOTP);
-        $result = $client->verifyCode('709708', self::PRESET_COUNTER, 0);
+        $result = $client->verifyCode('806976', self::PRESET_COUNTER, 0);
         $this->assertInternalType('integer', $result);
     }
 }
