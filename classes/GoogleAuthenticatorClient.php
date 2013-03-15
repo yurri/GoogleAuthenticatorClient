@@ -112,13 +112,13 @@ class Client {
     /**
      * Generates a new key basing on the allowed base32 alphabet
      *
-     * @param   int   $length   not sure non-default length will work, use on your own risk
      * @return  string
      */
-    public static function getNewKey($length = self::KEY_LENGTH) {
+    public static function getNewKey(/* $length = self::KEY_LENGTH*/) {
         $abc = \GoogleAuthenticator\Base32::getAlphabet();
 
         $key = '';
+        $length = self::KEY_LENGTH; // no experiments with non-standard length
         for ($i = 0; $i < $length; $i++) {
             $key .= $abc[array_rand($abc)];
         }
@@ -395,6 +395,10 @@ class Client {
      * @return  bool
      */
     public static function validateKey($key) {
+        if (strlen($key) !== self::KEY_LENGTH) {
+            return false;
+        }
+
         $chars = str_split($key);
         $abc = \GoogleAuthenticator\Base32::getAlphabet();
 

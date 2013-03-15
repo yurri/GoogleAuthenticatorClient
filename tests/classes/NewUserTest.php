@@ -15,7 +15,7 @@ class NewUserTest extends GoogleAuthenticatorClientTest {
         $this->assertEquals(false, \GoogleAuthenticator\Client::validateKey($key));
 
         // testing valid key
-        $key = 'U23457623ABCDEI';
+        $key = 'U23457623ABCDEI5';
         $this->assertEquals(true, \GoogleAuthenticator\Client::validateKey($key));
 
         // testing random key
